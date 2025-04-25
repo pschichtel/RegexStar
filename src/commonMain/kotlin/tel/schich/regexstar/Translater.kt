@@ -18,7 +18,7 @@ fun parseRegex(s: String): Regex {
 }
 
 private fun parseLiteral(s: String, forceFirst: Boolean, extraFollow: Set<Char>): Pair<Regex, String> {
-    val follow = setOf('(', '\\', '[', '{', '+', '?', '.') + extraFollow
+    val follow = setOf('(', '\\', '[', '{', '+', '?', '*', '.') + extraFollow
     val index = if (forceFirst) {
         s.withIndex().indexOfFirst { it.index > 0 && it.value in follow }
     } else {
@@ -264,11 +264,11 @@ fun optimize(r: Regex): Regex {
 }
 
 
-fun compileDoublestar(r: Regex): String {
+fun compileDoublestar(r: Regex, quantifierLimit: Int): String {
     fun renderGroup(members: List<String>) = members.joinToString(separator = ",", prefix = "{", postfix = "}")
     return when (r) {
-        is Regex.Chain -> r.children.joinToString(separator = "") { compileDoublestar(it) }
-        is Regex.CharacterClass.AnyChar -> "**"
+        is Regex.Chain -> r.children.joinToString(separator = "") { compileDoublestar(it, quantifierLimit) }
+        is Regex.CharacterClass.AnyChar -> "?"
         is Regex.CharacterClass.Explicit -> TODO("Explicit character class not supported!")
         is Regex.CharacterClass.Predefined -> when (val c = r.char) {
             'd' -> "[0-9]"
@@ -279,7 +279,7 @@ fun compileDoublestar(r: Regex): String {
         }
         is Regex.Dummy -> error("Dummy should not exist!")
         is Regex.Group -> {
-            renderGroup(r.children.map { compileDoublestar(it) })
+            renderGroup(r.children.map { compileDoublestar(it, quantifierLimit) })
         }
         is Regex.Literal -> {
             r.value
@@ -290,14 +290,25 @@ fun compileDoublestar(r: Regex): String {
                 .replace(",", "\\,")
         }
         is Regex.Quantifier -> {
-            when {
-                r.max == 0 -> ""
-                r.max == null || r.min == r.max -> compileDoublestar(r.subject).repeat(r.min)
-                r.max < r.min -> error("can't have max smaller than min!")
-                else -> {
-                    val subject = compileDoublestar(r.subject)
-                    val diff = r.max - r.min
-                    subject.repeat(r.min) + renderGroup((0..diff).map { subject.repeat(it) })
+            fun genFlexibleGroup(min: Int, max: Int, subject: String): String =
+                "?".repeat(min) + renderGroup((0..(max - min)).map { subject.repeat(it) })
+
+            val subject = r.subject
+            if (subject is Regex.CharacterClass.AnyChar) {
+                when {
+                    r.max == null -> "?".repeat(r.min) + "**"
+                    else -> genFlexibleGroup(r.min, r.max, "?")
+                }
+            } else {
+                val min = r.min
+                val max = r.max ?: quantifierLimit
+                when {
+                    min == max -> compileDoublestar(subject, quantifierLimit).repeat(min)
+                    max < min -> error("can't have max smaller than min!")
+                    else -> {
+                        val subject = compileDoublestar(subject, quantifierLimit)
+                        genFlexibleGroup(min, max, subject)
+                    }
                 }
             }
         }
