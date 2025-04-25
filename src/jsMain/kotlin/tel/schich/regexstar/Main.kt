@@ -22,7 +22,6 @@ fun main() {
                 fun update(event: Event) {
                     (event.target as? HTMLInputElement)?.value?.let { regexValue ->
                         (document.getElementById("doubestar") as? HTMLInputElement)?.let { doublestar ->
-
                             doublestar.value = compileDoublestar(optimize(parseRegex(regexValue)))
                         }
                     }
@@ -37,6 +36,11 @@ fun main() {
                 id = "doubestar"
                 readonly = true
                 placeholder = "Doublestar"
+            }
+        }
+        p {
+            a("https://github.com/pschichtel/RegexStar") {
+                +"Pull Requests are welcome on Github.com!"
             }
         }
     }
